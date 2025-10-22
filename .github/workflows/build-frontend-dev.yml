@@ -74,7 +74,7 @@ jobs:
           push: true
           tags: |
            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-           ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.run_number }}
+           # ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.run_number }}
 
       - name: 📝 Output image info
         run: |
