@@ -1,22 +1,12 @@
-name: 🐳 Manual Docker Build (branch-triggered DEV+PROD)
+name: 🐳 Manual Docker Build (branch auto)
 
 on:
   workflow_dispatch:
-    inputs:
-      branch:
-        description: 'Nom de la branche à builder'
-        required: true
-      dockerfile:
-        description: 'Chemin du Dockerfile'
-        required: true
-        default: ./Dockerfile
-      context:
-        description: 'Chemin du context Docker'
-        required: true
-        default: .
 
 env:
   REGISTRY: ghcr.io
+  DOCKERFILE: ./Dockerfile
+  CONTEXT: .
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.run_id }}
@@ -30,10 +20,9 @@ jobs:
       packages: write
 
     steps:
-      - name: 📥 Checkout de la branche choisie
+      - name: 📥 Checkout de la branche actuelle
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.branch }}
           fetch-depth: 0
 
       - name: 🐳 Set up Docker Buildx
@@ -50,24 +39,22 @@ jobs:
         id: tags
         run: |
           IMAGE_NAME_LOWER="$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
-          BRANCH="${{ github.event.inputs.branch }}"
+          BRANCH="${GITHUB_REF_NAME##*/}"
           CLEAN_BRANCH="$(echo "$BRANCH" | sed 's#[/ ]#-#g' | tr '[:upper:]' '[:lower:]')"
-          
           PROD_TAG="${{ env.REGISTRY }}/${IMAGE_NAME_LOWER}:${CLEAN_BRANCH}"
 
           echo "image_repo=${{ env.REGISTRY }}/${IMAGE_NAME_LOWER}" >> $GITHUB_OUTPUT
           echo "branch=${CLEAN_BRANCH}" >> $GITHUB_OUTPUT
           echo "prod_tag=${PROD_TAG}" >> $GITHUB_OUTPUT
 
-      # ----- PROD -----
-      - name: 📄 Copier .env.devops -> .env (PROD)
+      - name: 📄 Copier .env.devops -> .env
         run: cp .env.devops .env
 
-      - name: 🏗️ Build & push PROD (Dockerfile)
+      - name: 🏗️ Build & push Docker
         uses: docker/build-push-action@v5
         with:
-          context: ${{ github.event.inputs.context }}
-          file: ${{ github.event.inputs.dockerfile }}
+          context: ${{ env.CONTEXT }}
+          file: ${{ env.DOCKERFILE }}
           push: true
           tags: ${{ steps.tags.outputs.prod_tag }}
           cache-from: type=gha
