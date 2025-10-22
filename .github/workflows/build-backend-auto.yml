@@ -55,8 +55,6 @@ jobs:
 
           echo "tags=$TAG" >> $GITHUB_OUTPUT
           echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
-          echo "short_sha=$(echo "${{ github.sha }}" | cut -c1-7)" >> $GITHUB_OUTPUT
-          echo "full_sha=${{ github.sha }}" >> $GITHUB_OUTPUT
           echo "Generated tag: $TAG"
 
       - name: 📄 Copy .env.devops to .env
@@ -85,4 +83,3 @@ jobs:
           echo "Repository: ${{ env.IMAGE_NAME }}"
           echo "Tag: ${{ steps.tags.outputs.tags }}"
           echo "Branch: ${{ steps.tags.outputs.branch_name }}"
-          echo "Commit: ${{ steps.tags.outputs.short_sha }}"
