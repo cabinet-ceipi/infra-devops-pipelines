@@ -1,12 +1,19 @@
 name: 🐳 Manual Docker Build (branch auto)
 
 on:
-  workflow_dispatch:
+  workflow_call:    # <- obligatoire pour l'appeler depuis un autre workflow
+    inputs:
+      dockerfile:
+        required: false
+        type: string
+        default: ./Dockerfile
+      context:
+        required: false
+        type: string
+        default: .
 
 env:
   REGISTRY: ghcr.io
-  DOCKERFILE: ./Dockerfile
-  CONTEXT: .
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.run_id }}
@@ -53,8 +60,8 @@ jobs:
       - name: 🏗️ Build & push Docker
         uses: docker/build-push-action@v5
         with:
-          context: ${{ env.CONTEXT }}
-          file: ${{ env.DOCKERFILE }}
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
           push: true
           tags: ${{ steps.tags.outputs.prod_tag }}
           cache-from: type=gha
