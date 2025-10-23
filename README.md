@@ -27,6 +27,7 @@ on:
     branches:
       - main
       - release
+  workflow_dispatch:
 
 jobs:
   build:
