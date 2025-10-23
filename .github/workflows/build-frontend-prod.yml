@@ -1,10 +1,7 @@
 name: 🐳 Docker Build & Deploy (Auto)
 
 on:
-  push:
-    branches:
-      - main
-      - release
+
   workflow_call:
     inputs:
       dockerfile:
