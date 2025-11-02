@@ -1,15 +1,20 @@
 name: 🐳 Docker Build & Deploy (Auto)
 
 on:
-
+  push:
+    branches:
+      - main
+      - release
   workflow_call:
     inputs:
       dockerfile:
-        required: true
+        required: false
         type: string
+        default: ./Dockerfile
       context:
-        required: true
+        required: false
         type: string
+        default: .
     # secrets:
     #   GITHUB_TOKEN:
     #     required: true
@@ -58,14 +63,14 @@ jobs:
           echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
           echo "Generated tag: $TAG"
 
-      # - name: 📄 Copy .env.devops to .env
-      #   run: |
-      #     if [ -f .env.devops ]; then
-      #       cp .env.devops .env
-      #       echo ".env.devops copied to .env"
-      #     else
-      #       echo "No .env.devops file found, skipping copy."
-      #     fi
+      - name: 📄 Copy .env.devops to .env
+        run: |
+          if [ -f .env.devops ]; then
+            cp .env.devops .env
+            echo ".env.devops copied to .env"
+          else
+            echo "No .env.devops file found, skipping copy."
+          fi
 
       - name: 🏗️ Build and push Docker image
         uses: docker/build-push-action@v5
