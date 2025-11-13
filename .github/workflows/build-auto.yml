@@ -7,10 +7,10 @@ on:
       - release
   workflow_call:
     inputs:
-      # dockerfile:
-      #   required: false
-      #   type: string
-      #   default: ./Dockerfile
+      dockerfile:
+        required: false
+        type: string
+        default: ./Dockerfile
       context:
         required: false
         type: string
