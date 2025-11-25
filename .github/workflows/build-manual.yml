@@ -1,7 +1,7 @@
 name: 🐳 Manual Docker Build (branch auto)
 
 on:
-  workflow_call:    # <- obligatoire pour l'appeler depuis un autre workflow
+  workflow_call: # Appelable depuis un autre workflow
     inputs:
       dockerfile:
         required: false
@@ -45,17 +45,31 @@ jobs:
       - name: 🏷️ Générer le tag basé sur la branche
         id: tags
         run: |
+          # repo en minuscule (recommandé pour GHCR)
           IMAGE_NAME_LOWER="$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+
+          # nom de branche (ex: feature/ma-branche)
           BRANCH="${GITHUB_REF_NAME##*/}"
+
+          # Nettoyage pour Docker : remplace / et espace par -
           CLEAN_BRANCH="$(echo "$BRANCH" | sed 's#[/ ]#-#g' | tr '[:upper:]' '[:lower:]')"
+
           PROD_TAG="${{ env.REGISTRY }}/${IMAGE_NAME_LOWER}:${CLEAN_BRANCH}"
 
-          echo "image_repo=${{ env.REGISTRY }}/${IMAGE_NAME_LOWER}" >> $GITHUB_OUTPUT
-          echo "branch=${CLEAN_BRANCH}" >> $GITHUB_OUTPUT
-          echo "prod_tag=${PROD_TAG}" >> $GITHUB_OUTPUT
+          echo "✅ Tag généré : $PROD_TAG"
+
+          echo "image_repo=${{ env.REGISTRY }}/${IMAGE_NAME_LOWER}" >> "$GITHUB_OUTPUT"
+          echo "branch=${CLEAN_BRANCH}" >> "$GITHUB_OUTPUT"
+          echo "prod_tag=${PROD_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: 📄 Copier .env.devops -> .env
-        run: cp .env.devops .env
+        run: |
+          if [ -f .env.devops ]; then
+            cp .env.devops .env
+            echo ".env.devops copied to .env"
+          else
+            echo "No .env.devops file found, skipping copy."
+          fi
 
       - name: 🏗️ Build & push Docker
         uses: docker/build-push-action@v5
@@ -69,7 +83,8 @@ jobs:
 
       - name: 📝 Sortie
         run: |
-          echo "Registry : ${{ env.REGISTRY }}"
-          echo "Repo     : ${{ steps.tags.outputs.image_repo }}"
-          echo "Branche  : ${{ steps.tags.outputs.branch }}"
-          echo "Tag PROD : ${{ steps.tags.outputs.prod_tag }}"
+          echo "🐳 Image construite et poussée :"
+          echo "  Registry : ${{ env.REGISTRY }}"
+          echo "  Repo     : ${{ steps.tags.outputs.image_repo }}"
+          echo "  Branche  : ${{ steps.tags.outputs.branch }}"
+          echo "  Tag PROD : ${{ steps.tags.outputs.prod_tag }}"
