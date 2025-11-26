@@ -1,10 +1,6 @@
-name: 🐳 Docker Build & Deploy (Auto)
+name: 🐳 Docker Build & Push (Reusable)
 
 on:
-  push:
-    branches:
-      - main
-      - release
   workflow_call:
     inputs:
       dockerfile:
@@ -23,7 +19,6 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-
     permissions:
       contents: read
       packages: write
@@ -57,7 +52,6 @@ jobs:
             exit 1
           fi
 
-          echo "✅ Tag généré : $TAGS"
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
           echo "branch_name=${BRANCH_NAME}" >> "$GITHUB_OUTPUT"
 
@@ -73,8 +67,8 @@ jobs:
       - name: 🏗️ Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: ${{ github.event_name == 'workflow_call' && inputs.context || '.' }}
-          file: ${{ github.event_name == 'workflow_call' && inputs.dockerfile || './Dockerfile' }}
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
           push: true
           tags: ${{ steps.tags.outputs.tags }}
           cache-from: type=gha
