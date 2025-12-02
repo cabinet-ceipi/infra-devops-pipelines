@@ -44,9 +44,9 @@ jobs:
           IMAGE_BASE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
 
           if [[ "$BRANCH_NAME" == "release" ]]; then
-            TAGS="${IMAGE_BASE}:dev"
-          elif [[ "$BRANCH_NAME" == "main" ]]; then
             TAGS="${IMAGE_BASE}:latest"
+          elif [[ "$BRANCH_NAME" == "main" ]]; then
+            TAGS="${IMAGE_BASE}:main"
           else
             echo "❌ Branche non autorisée : $BRANCH_NAME"
             exit 1
