@@ -79,7 +79,7 @@ jobs:
               if [ -f "$SETUP" ]; then
                 echo "▶️ Exécution du script de setup : $SETUP"
                 chmod +x "$SETUP" || true
-                "$SETUP"
+                sh "$SETUP"
               else
                 echo "❌ Fichier de setup introuvable : $SETUP"
               fi
