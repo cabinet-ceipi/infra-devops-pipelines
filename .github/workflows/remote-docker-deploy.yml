@@ -1,0 +1,75 @@
+
+name: 🚀 Remote Docker Deploy (VPS via password)
+
+on:
+  workflow_call:
+    inputs:
+      host:
+        description: "Adresse du VPS (ex: vmi123456.contabo.com)"
+        required: true
+        type: string
+      user:
+        description: "Utilisateur SSH (ex: root)"
+        required: true
+        type: string
+      target_dir:
+        description: "Dossier sur le VPS contenant le docker-compose.yml"
+        required: true
+        type: string
+      setup:
+        description: "Chemin du script de setup à exécuter (optionnel, ex: ./setup.sh)"
+        required: false
+        type: string
+        default: ""
+    secrets:
+      SSH_PASSWORD:
+        description: "Mot de passe SSH pour se connecter au VPS"
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🛠️ Installer sshpass
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sshpass
+
+      - name: 📡 Déploiement Docker sur le VPS
+        env:
+          VPS_HOST: ${{ inputs.host }}
+          VPS_USER: ${{ inputs.user }}
+          TARGET_DIR: ${{ inputs.target_dir }}
+          SETUP: ${{ inputs.setup }}
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+        run: |
+          sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no "$VPS_USER@$VPS_HOST" << EOF
+            set -e
+
+            echo "➡️ Dossier cible : $TARGET_DIR"
+            cd "$TARGET_DIR"
+
+            echo "🐳 docker compose pull"
+            docker compose pull
+
+            echo "🛑 docker compose down"
+            docker compose down
+
+            echo "🚀 docker compose up -d"
+            docker compose up -d
+
+            # Vérifie si la variable SETUP (transmise depuis GitHub Actions) est définie
+            if [ -n "$SETUP" ]; then
+              echo "⚙️ Variable SETUP détectée : $SETUP"
+              if [ -f "$SETUP" ]; then
+                echo "▶️ Exécution du script de setup : $SETUP"
+                chmod +x "$SETUP" || true
+                "$SETUP"
+              else
+                echo "❌ Fichier de setup introuvable : $SETUP"
+              fi
+            else
+              echo "ℹ️ Aucune variable SETUP définie, pas de script de setup exécuté."
+            fi
+          EOF
