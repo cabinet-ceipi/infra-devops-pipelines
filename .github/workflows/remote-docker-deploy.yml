@@ -49,6 +49,15 @@ jobs:
           SETUP: ${{ inputs.setup }}
           SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
         run: |
+          echo "🔎 VPS_HOST   = $VPS_HOST"
+          echo "🔎 VPS_USER   = $VPS_USER"
+          echo "🔎 TARGET_DIR = $TARGET_DIR"
+
+          if [ -z "$VPS_HOST" ] || [ -z "$VPS_USER" ]; then
+            echo "❌ VPS_HOST ou VPS_USER est vide, arrêt du déploiement."
+            exit 1
+          fi
+
           sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no "$VPS_USER@$VPS_HOST" << EOF
             set -e
 
