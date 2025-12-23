@@ -53,16 +53,16 @@ jobs:
             PATCH_COUNT=$(git log ${LAST_TAG}..HEAD --oneline | wc -l)
             
             # Analyse commits pour déterminer le type de version
-            if git log ${LAST_TAG}..HEAD --oneline | grep -q "BREAKING CHANGE"; then
+            if git log ${LAST_TAG}..HEAD --pretty=%s | grep -q "BREAKING CHANGE"; then
               # Major
               MAJOR=$(echo $LAST_TAG | cut -d. -f1 | sed 's/v//')
               VERSION="v$((MAJOR+1)).0.0"
-            elif git log ${LAST_TAG}..HEAD --oneline | grep -q "^feat:"; then
+            elif git log ${LAST_TAG}..HEAD --pretty=%s | grep -q "^feat:"; then
               # Minor
               MAJOR=$(echo $LAST_TAG | cut -d. -f1 | sed 's/v//')
               MINOR=$(echo $LAST_TAG | cut -d. -f2)
               VERSION="v${MAJOR}.$((MINOR+1)).0"
-            elif git log ${LAST_TAG}..HEAD --oneline | grep -q "^fix:"; then
+            elif git log ${LAST_TAG}..HEAD --pretty=%s | grep -q "^fix:"; then
               # Patch
               MAJOR=$(echo $LAST_TAG | cut -d. -f1 | sed 's/v//')
               MINOR=$(echo $LAST_TAG | cut -d. -f2)
