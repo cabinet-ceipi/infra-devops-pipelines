@@ -1,4 +1,4 @@
-name: 🏷️ Docker Build & Push - Release Tag (Reusable)
+name: 🐳 Docker Build & Push - Main Branch (Reusable)
 
 on:
   workflow_call:
@@ -11,13 +11,16 @@ on:
         required: false
         type: string
         default: .
+      version:
+        required: false
+        type: string
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-push-tag:
+  build-and-push:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -26,6 +29,8 @@ jobs:
     steps:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Important pour avoir tout l'historique git
 
       - name: 🐳 Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -37,28 +42,78 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 🏷️ Generate Docker tag from release
-        id: tags
+      - name: 🔢 Determine Docker version tag
+        id: version
         run: |
-          TAG_NAME="${{ github.ref_name }}"
-          IMAGE_BASE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          # Si la version est passée en input, on l'utilise
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+            echo "✅ Version manuelle fournie : $VERSION"
+          else
+            # Récupérer le dernier tag
+            LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+            
+            if [ -z "$LAST_TAG" ]; then
+              echo "⚠️ Aucun tag trouvé, initialisation à v0.1.0"
+              VERSION="v0.1.0"
+            else
+              echo "📌 Dernier tag trouvé : $LAST_TAG"
+              
+              # Extraire les numéros de version
+              MAJOR=$(echo $LAST_TAG | sed 's/v//' | cut -d. -f1)
+              MINOR=$(echo $LAST_TAG | sed 's/v//' | cut -d. -f2)
+              PATCH=$(echo $LAST_TAG | sed 's/v//' | cut -d. -f3)
+              
+              echo "Version actuelle : MAJOR=$MAJOR, MINOR=$MINOR, PATCH=$PATCH"
+              
+              # Récupérer les commits depuis le dernier tag
+              COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=%s)
+              COMMIT_COUNT=$(echo "$COMMITS" | grep -v '^$' | wc -l)
+              
+              echo "📝 Nombre de commits depuis le dernier tag : $COMMIT_COUNT"
+              
+              if [ "$COMMIT_COUNT" -eq 0 ]; then
+                echo "⚠️ Pas de nouveaux commits, on garde la version : $LAST_TAG"
+                VERSION="$LAST_TAG"
+              else
+                echo "Analyse des commits :"
+                echo "$COMMITS"
+                
+                # Vérifier BREAKING CHANGE
+                if echo "$COMMITS" | grep -qi "BREAKING CHANGE\|breaking change"; then
+                  echo "🔴 BREAKING CHANGE détecté → Version MAJOR"
+                  VERSION="v$((MAJOR+1)).0.0"
+                
+                # Vérifier feat:
+                elif echo "$COMMITS" | grep -qi "^feat:\|^feat("; then
+                  echo "🟢 Feature détectée → Version MINOR"
+                  VERSION="v${MAJOR}.$((MINOR+1)).0"
+                
+                # Vérifier fix:
+                elif echo "$COMMITS" | grep -qi "^fix:\|^fix("; then
+                  echo "🟡 Fix détecté → Version PATCH"
+                  VERSION="v${MAJOR}.${MINOR}.$((PATCH+1))"
+                
+                # Par défaut, incrémenter le patch
+                else
+                  echo "⚪ Commit standard → Version PATCH"
+                  VERSION="v${MAJOR}.${MINOR}.$((PATCH+1))"
+                fi
+              fi
+            fi
+          fi
 
-          # Supprimer le préfixe 'v' si présent (v2.0.0 -> 2.0.0)
-          VERSION="${TAG_NAME#v}"
-
-          TAGS="${IMAGE_BASE}:${VERSION},${IMAGE_BASE}:latest"
-
-          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "🎯 Version finale : $VERSION"
 
       - name: 📄 Copy .env.devops to .env
         run: |
           if [ -f .env.devops ]; then
             cp .env.devops .env
-            echo ".env.devops copied to .env"
+            echo "✅ .env.devops copié vers .env"
           else
-            echo "No .env.devops file found, skipping copy."
+            echo "⚠️ Fichier .env.devops introuvable, étape ignorée"
           fi
 
       - name: 🏗️ Build and push Docker image
@@ -67,15 +122,35 @@ jobs:
           context: ${{ inputs.context }}
           file: ${{ inputs.dockerfile }}
           push: true
-          tags: ${{ steps.tags.outputs.tags }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: 🏷️ Create Git tag
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Vérifier si le tag existe déjà
+          if git rev-parse "$VERSION" >/dev/null 2>&1; then
+            echo "⚠️ Le tag $VERSION existe déjà"
+          else
+            git tag -a "$VERSION" -m "Release $VERSION"
+            git push origin "$VERSION"
+            echo "✅ Tag $VERSION créé et poussé"
+          fi
+
       - name: 📝 Output image info
         run: |
-          echo "🐳 Image construite et poussée :"
-          echo "  Registry:   ${{ env.REGISTRY }}"
-          echo "  Repository: ${{ env.IMAGE_NAME }}"
-          echo "  Tag original: ${{ steps.tags.outputs.tag_name }}"
-          echo "  Version:    ${{ steps.tags.outputs.version }}"
-          echo "  Tags:       ${{ steps.tags.outputs.tags }}"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🐳 IMAGE DOCKER CRÉÉE"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📦 Registry:   ${{ env.REGISTRY }}"
+          echo "📂 Repository: ${{ env.IMAGE_NAME }}"
+          echo "🏷️  Tags:"
+          echo "   - ${{ steps.version.outputs.version }}"
+          echo "   - main"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
