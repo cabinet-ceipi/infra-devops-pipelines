@@ -45,19 +45,47 @@ jobs:
             # Récupérer le dernier tag
             LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
             
-            # Extraire les composants de version
-            MAJOR=$(echo $LAST_TAG | cut -d. -f1 | sed 's/v//')
-            MINOR=$(echo $LAST_TAG | cut -d. -f2)
-            PATCH=$(echo $LAST_TAG | cut -d. -f3)
+            # Compter les commits depuis le dernier tag
+            COMMITS_SINCE_TAG=$(git rev-list ${LAST_TAG}..HEAD --count)
             
-            # Incrémenter automatiquement le PATCH à chaque build
-            NEW_PATCH=$((PATCH+1))
-            VERSION="v${MAJOR}.${MINOR}.${NEW_PATCH}"
+            if [ "$COMMITS_SINCE_TAG" -eq 0 ]; then
+              # Pas de nouveaux commits, incrémenter quand même le patch
+              MAJOR=$(echo $LAST_TAG | cut -d. -f1 | sed 's/v//')
+              MINOR=$(echo $LAST_TAG | cut -d. -f2)
+              PATCH=$(echo $LAST_TAG | cut -d. -f3)
+              VERSION="v${MAJOR}.${MINOR}.$((PATCH+1))"
+            else
+              # Analyse commits pour déterminer le type de version
+              if git log ${LAST_TAG}..HEAD --pretty=%s | grep -q "BREAKING CHANGE"; then
+                # Major : v1.0.0, v2.0.0, etc.
+                MAJOR=$(echo $LAST_TAG | cut -d. -f1 | sed 's/v//')
+                VERSION="v$((MAJOR+1)).0.0"
+              elif git log ${LAST_TAG}..HEAD --pretty=%s | grep -q "^feat:"; then
+                # Minor : v0.1.0, v0.2.0, etc.
+                MAJOR=$(echo $LAST_TAG | cut -d. -f1 | sed 's/v//')
+                MINOR=$(echo $LAST_TAG | cut -d. -f2)
+                VERSION="v${MAJOR}.$((MINOR+1)).0"
+              elif git log ${LAST_TAG}..HEAD --pretty=%s | grep -q "^fix:"; then
+                # Patch : v0.0.1, v0.0.2, etc.
+                MAJOR=$(echo $LAST_TAG | cut -d. -f1 | sed 's/v//')
+                MINOR=$(echo $LAST_TAG | cut -d. -f2)
+                PATCH=$(echo $LAST_TAG | cut -d. -f3)
+                VERSION="v${MAJOR}.${MINOR}.$((PATCH+1))"
+              else
+                # Pas de préfixe conventionnel → incrémenter le patch par défaut
+                MAJOR=$(echo $LAST_TAG | cut -d. -f1 | sed 's/v//')
+                MINOR=$(echo $LAST_TAG | cut -d. -f2)
+                PATCH=$(echo $LAST_TAG | cut -d. -f3)
+                VERSION="v${MAJOR}.${MINOR}.$((PATCH+1))"
+              fi
+            fi
           fi
           
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Docker tag version: $VERSION"
+          echo "🔍 Dernière version détectée : $LAST_TAG"
+          echo "🆕 Nouvelle version générée : $VERSION"
       - name: 🏷️ Create and push new tag
         run: |
           git config user.name "github-actions[bot]"
