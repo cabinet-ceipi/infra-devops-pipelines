@@ -1,5 +1,4 @@
 name: 🐳 Docker Build & Push - Main Branch (Reusable)
-
 on:
   workflow_call:
     inputs:
@@ -11,48 +10,67 @@ on:
         required: false
         type: string
         default: .
-
+      version:
+        required: false
+        type: string
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-
     steps:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
-
+        with:
+          fetch-depth: 0
       - name: 🐳 Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
       - name: 🔐 Log in to Container Registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 📋 Generate Docker tag
-        id: tags
+      - name: 🔢 Determine Docker version tag
+        id: version
         run: |
-          BRANCH_NAME="${{ github.ref_name }}"
-          IMAGE_BASE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
-
-          if [[ "$BRANCH_NAME" == "main" ]]; then
-            TAGS="${IMAGE_BASE}:main"
+          # Si la version est passée en input, on l'utilise
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
           else
-            echo "❌ Branche non autorisée : $BRANCH_NAME (seule la branche main est acceptée)"
-            exit 1
+            # Sinon, calculer la version automatiquement selon commits
+            # Utilisation simplifiée de git pour exemple ; pour production, utiliser semantic-release
+            LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+            PATCH_COUNT=$(git log ${LAST_TAG}..HEAD --oneline | wc -l)
+            
+            # Analyse commits pour déterminer le type de version
+            if git log ${LAST_TAG}..HEAD --pretty=%s | grep -q "BREAKING CHANGE"; then
+              # Major
+              MAJOR=$(echo $LAST_TAG | cut -d. -f1 | sed 's/v//')
+              VERSION="v$((MAJOR+1)).0.0"
+            elif git log ${LAST_TAG}..HEAD --pretty=%s | grep -q "^feat:"; then
+              # Minor
+              MAJOR=$(echo $LAST_TAG | cut -d. -f1 | sed 's/v//')
+              MINOR=$(echo $LAST_TAG | cut -d. -f2)
+              VERSION="v${MAJOR}.$((MINOR+1)).0"
+            elif git log ${LAST_TAG}..HEAD --pretty=%s | grep -q "^fix:"; then
+              # Patch
+              MAJOR=$(echo $LAST_TAG | cut -d. -f1 | sed 's/v//')
+              MINOR=$(echo $LAST_TAG | cut -d. -f2)
+              PATCH=$(echo $LAST_TAG | cut -d. -f3)
+              VERSION="v${MAJOR}.${MINOR}.$((PATCH+1))"
+            else
+              # Pas de commit impactant → on garde le dernier tag
+              VERSION="$LAST_TAG"
+            fi
           fi
-
-          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
-          echo "branch_name=${BRANCH_NAME}" >> "$GITHUB_OUTPUT"
-
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Docker tag version: $VERSION"
       - name: 📄 Copy .env.devops to .env
         run: |
           if [ -f .env.devops ]; then
@@ -61,21 +79,18 @@ jobs:
           else
             echo "No .env.devops file found, skipping copy."
           fi
-
       - name: 🏗️ Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: ${{ inputs.context }}
           file: ${{ inputs.dockerfile }}
           push: true
-          tags: ${{ steps.tags.outputs.tags }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
       - name: 📝 Output image info
         run: |
           echo "🐳 Image construite et poussée :"
           echo "  Registry:   ${{ env.REGISTRY }}"
           echo "  Repository: ${{ env.IMAGE_NAME }}"
-          echo "  Tag:        ${{ steps.tags.outputs.tags }}"
-          echo "  Branch:     ${{ steps.tags.outputs.branch_name }}"
+          echo "  Tag:        ${{ steps.version.outputs.version }}"
