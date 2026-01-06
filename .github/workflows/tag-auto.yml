@@ -23,18 +23,27 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write   # requis pour tag + release
       packages: write
 
     steps:
+      # ─────────────────────────────────────────────
+      # 1. Checkout complet (tags inclus)
+      # ─────────────────────────────────────────────
       - name: 📥 Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Important pour avoir tout l'historique git
+          fetch-depth: 0
 
+      # ─────────────────────────────────────────────
+      # 2. Docker Buildx
+      # ─────────────────────────────────────────────
       - name: 🐳 Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # ─────────────────────────────────────────────
+      # 3. Login GHCR
+      # ─────────────────────────────────────────────
       - name: 🔐 Log in to Container Registry
         uses: docker/login-action@v3
         with:
@@ -42,80 +51,57 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # ─────────────────────────────────────────────
+      # 4. Détermination de la version (SemVer)
+      # ─────────────────────────────────────────────
       - name: 🔢 Determine Docker version tag
         id: version
         run: |
-          # Si la version est passée en input, on l'utilise
           if [ -n "${{ inputs.version }}" ]; then
             VERSION="${{ inputs.version }}"
-            echo "✅ Version manuelle fournie : $VERSION"
+            COMMITS="Version forcée manuellement."
           else
-            # Récupérer le dernier tag
             LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-            
+
             if [ -z "$LAST_TAG" ]; then
-              echo "⚠️ Aucun tag trouvé, initialisation à v0.1.0"
               VERSION="v0.1.0"
+              COMMITS=$(git log --pretty="- %s")
             else
-              echo "📌 Dernier tag trouvé : $LAST_TAG"
-              
-              # Extraire les numéros de version
+              COMMITS=$(git log ${LAST_TAG}..HEAD --pretty="- %s")
+
               MAJOR=$(echo $LAST_TAG | sed 's/v//' | cut -d. -f1)
               MINOR=$(echo $LAST_TAG | sed 's/v//' | cut -d. -f2)
               PATCH=$(echo $LAST_TAG | sed 's/v//' | cut -d. -f3)
-              
-              echo "Version actuelle : MAJOR=$MAJOR, MINOR=$MINOR, PATCH=$PATCH"
-              
-              # Récupérer les commits depuis le dernier tag
-              COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=%s)
-              COMMIT_COUNT=$(echo "$COMMITS" | grep -v '^$' | wc -l)
-              
-              echo "📝 Nombre de commits depuis le dernier tag : $COMMIT_COUNT"
-              
-              if [ "$COMMIT_COUNT" -eq 0 ]; then
-                echo "⚠️ Pas de nouveaux commits, on garde la version : $LAST_TAG"
-                VERSION="$LAST_TAG"
+
+              if echo "$COMMITS" | grep -qi "BREAKING CHANGE"; then
+                VERSION="v$((MAJOR+1)).0.0"
+              elif echo "$COMMITS" | grep -qi "^-\ feat"; then
+                VERSION="v${MAJOR}.$((MINOR+1)).0"
               else
-                echo "Analyse des commits :"
-                echo "$COMMITS"
-                
-                # Vérifier BREAKING CHANGE
-                if echo "$COMMITS" | grep -qi "BREAKING CHANGE\|breaking change"; then
-                  echo "🔴 BREAKING CHANGE détecté → Version MAJOR"
-                  VERSION="v$((MAJOR+1)).0.0"
-                
-                # Vérifier feat:
-                elif echo "$COMMITS" | grep -qi "^feat:\|^feat("; then
-                  echo "🟢 Feature détectée → Version MINOR"
-                  VERSION="v${MAJOR}.$((MINOR+1)).0"
-                
-                # Vérifier fix:
-                elif echo "$COMMITS" | grep -qi "^fix:\|^fix("; then
-                  echo "🟡 Fix détecté → Version PATCH"
-                  VERSION="v${MAJOR}.${MINOR}.$((PATCH+1))"
-                
-                # Par défaut, incrémenter le patch
-                else
-                  echo "⚪ Commit standard → Version PATCH"
-                  VERSION="v${MAJOR}.${MINOR}.$((PATCH+1))"
-                fi
+                VERSION="v${MAJOR}.${MINOR}.$((PATCH+1))"
               fi
             fi
           fi
 
           echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "🎯 Version finale : $VERSION"
+          echo "COMMITS<<EOF" >> $GITHUB_ENV
+          echo "$COMMITS" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
 
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      # ─────────────────────────────────────────────
+      # 5. Préparation .env
+      # ─────────────────────────────────────────────
       - name: 📄 Copy .env.devops to .env
         run: |
           if [ -f .env.devops ]; then
             cp .env.devops .env
-            echo "✅ .env.devops copié vers .env"
-          else
-            echo "⚠️ Fichier .env.devops introuvable, étape ignorée"
           fi
 
+      # ─────────────────────────────────────────────
+      # 6. Build & Push Docker
+      # ─────────────────────────────────────────────
       - name: 🏗️ Build and push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -123,34 +109,51 @@ jobs:
           file: ${{ inputs.dockerfile }}
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # ─────────────────────────────────────────────
+      # 7. Création du tag Git
+      # ─────────────────────────────────────────────
       - name: 🏷️ Create Git tag
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # Vérifier si le tag existe déjà
-          if git rev-parse "$VERSION" >/dev/null 2>&1; then
-            echo "⚠️ Le tag $VERSION existe déjà"
+
+          if git rev-parse "${{ env.VERSION }}" >/dev/null 2>&1; then
+            echo "Tag déjà existant"
           else
-            git tag -a "$VERSION" -m "Release $VERSION"
-            git push origin "$VERSION"
-            echo "✅ Tag $VERSION créé et poussé"
+            git tag -a "${{ env.VERSION }}" -m "Release ${{ env.VERSION }}"
+            git push origin "${{ env.VERSION }}"
           fi
 
-      - name: 📝 Output image info
-        run: |
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "🐳 IMAGE DOCKER CRÉÉE"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "📦 Registry:   ${{ env.REGISTRY }}"
-          echo "📂 Repository: ${{ env.IMAGE_NAME }}"
-          echo "🏷️  Tags:"
-          echo "   - ${{ steps.version.outputs.version }}"
-          echo "   - main"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      # ─────────────────────────────────────────────
+      # 8. Création de la Release GitHub (précise)
+      # ─────────────────────────────────────────────
+      - name: 🚀 Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION }}
+          name: "Release ${{ env.VERSION }}"
+          body: |
+            ## 🚀 Release ${{ env.VERSION }}
+
+            ### 📌 Changements inclus
+            ${{ env.COMMITS }}
+
+            ### 🐳 Image Docker
+            ```
+            ghcr.io/${{ github.repository }}:${{ env.VERSION }}
+            ```
+
+            ### 🔄 Rollback
+            ```
+            docker pull ghcr.io/${{ github.repository }}:${{ env.VERSION }}
+            ```
+
+            ---
+            Release générée automatiquement via GitHub Actions.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
