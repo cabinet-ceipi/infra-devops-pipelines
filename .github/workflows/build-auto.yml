@@ -4,17 +4,19 @@ on:
   workflow_call:
     inputs:
       dockerfile:
+        description: "Chemin vers le Dockerfile"
         required: false
         type: string
         default: ./Dockerfile
       context:
+        description: "Contexte de build Docker"
         required: false
         type: string
         default: .
       image_tag:
+        description: "Tag Docker à utiliser (ex: v1.0.0, latest, prod)"
         required: true
         type: string
-        description: "Tag Docker à utiliser (ex: v1.0.0, latest, prod)"
 
 env:
   REGISTRY: ghcr.io
@@ -33,8 +35,9 @@ jobs:
 
       - name: 🔒 Check branch (main only)
         run: |
+          echo "Branch actuelle : ${{ github.ref_name }}"
           if [ "${{ github.ref_name }}" != "main" ]; then
-            echo "❌ Ce workflow ne peut être exécuté que depuis la branche main"
+            echo "❌ Ce workflow réutilisable ne peut être exécuté que depuis la branche main"
             exit 1
           fi
 
@@ -48,6 +51,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: 🐞 Debug received inputs
+        run: |
+          echo "dockerfile = '${{ inputs.dockerfile }}'"
+          echo "context    = '${{ inputs.context }}'"
+          echo "image_tag  = '${{ inputs.image_tag }}'"
+
       - name: 📋 Generate Docker tag (manual)
         id: tags
         run: |
@@ -59,16 +68,20 @@ jobs:
             exit 1
           fi
 
-          echo "tags=${IMAGE_BASE}:${TAG}" >> "$GITHUB_OUTPUT"
+          FULL_TAG="${IMAGE_BASE}:${TAG}"
+
+          echo "tags=${FULL_TAG}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+          echo "✅ Tag généré : ${FULL_TAG}"
 
       - name: 📄 Copy .env.devops to .env
         run: |
           if [ -f .env.devops ]; then
             cp .env.devops .env
-            echo ".env.devops copied to .env"
+            echo "✅ .env.devops copié vers .env"
           else
-            echo "No .env.devops file found, skipping copy."
+            echo "ℹ️ Aucun fichier .env.devops trouvé, étape ignorée"
           fi
 
       - name: 🏗️ Build and push Docker image
@@ -83,8 +96,8 @@ jobs:
 
       - name: 📝 Output image info
         run: |
-          echo "🐳 Image construite et poussée :"
-          echo "  Registry:   ${{ env.REGISTRY }}"
-          echo "  Repository: ${{ env.IMAGE_NAME }}"
-          echo "  Tag:        ${{ steps.tags.outputs.tag }}"
-          echo "  Full image: ${{ steps.tags.outputs.tags }}"
+          echo "🐳 Image construite et poussée avec succès :"
+          echo "  Registry:    ${{ env.REGISTRY }}"
+          echo "  Repository:  ${{ env.IMAGE_NAME }}"
+          echo "  Tag:         ${{ steps.tags.outputs.tag }}"
+          echo "  Image full:  ${{ steps.tags.outputs.tags }}"
