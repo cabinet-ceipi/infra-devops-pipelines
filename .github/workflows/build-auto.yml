@@ -11,6 +11,10 @@ on:
         required: false
         type: string
         default: .
+      image_tag:
+        required: true
+        type: string
+        description: "Tag Docker à utiliser (ex: v1.0.0, latest, prod)"
 
 env:
   REGISTRY: ghcr.io
@@ -27,6 +31,13 @@ jobs:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
 
+      - name: 🔒 Check branch (main only)
+        run: |
+          if [ "${{ github.ref_name }}" != "main" ]; then
+            echo "❌ Ce workflow ne peut être exécuté que depuis la branche main"
+            exit 1
+          fi
+
       - name: 🐳 Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -37,21 +48,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 📋 Generate Docker tag
+      - name: 📋 Generate Docker tag (manual)
         id: tags
         run: |
-          BRANCH_NAME="${{ github.ref_name }}"
           IMAGE_BASE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          TAG="${{ inputs.image_tag }}"
 
-          if [[ "$BRANCH_NAME" == "main" ]]; then
-            TAGS="${IMAGE_BASE}:main"
-          else
-            echo "❌ Branche non autorisée : $BRANCH_NAME (seule la branche main est acceptée)"
+          if [ -z "$TAG" ]; then
+            echo "❌ Le tag Docker est obligatoire"
             exit 1
           fi
 
-          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
-          echo "branch_name=${BRANCH_NAME}" >> "$GITHUB_OUTPUT"
+          echo "tags=${IMAGE_BASE}:${TAG}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
       - name: 📄 Copy .env.devops to .env
         run: |
@@ -77,5 +86,5 @@ jobs:
           echo "🐳 Image construite et poussée :"
           echo "  Registry:   ${{ env.REGISTRY }}"
           echo "  Repository: ${{ env.IMAGE_NAME }}"
-          echo "  Tag:        ${{ steps.tags.outputs.tags }}"
-          echo "  Branch:     ${{ steps.tags.outputs.branch_name }}"
+          echo "  Tag:        ${{ steps.tags.outputs.tag }}"
+          echo "  Full image: ${{ steps.tags.outputs.tags }}"
