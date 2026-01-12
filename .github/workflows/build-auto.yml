@@ -1,4 +1,4 @@
-name: 🐳 Docker Build & Push - Main Branch (Reusable)
+name: 🐳 Docker Build & Push (Reusable – Manual Tag)
 
 on:
   workflow_call:
@@ -9,12 +9,12 @@ on:
         type: string
         default: ./Dockerfile
       context:
-        description: "Contexte de build Docker"
+        description: "Contexte Docker"
         required: false
         type: string
         default: .
       image_tag:
-        description: "Tag Docker à utiliser (ex: v1.0.0, latest, prod)"
+        description: "Tag Docker saisi par l'utilisateur (ex: prod, v1.0.0)"
         required: true
         type: string
 
@@ -33,71 +33,45 @@ jobs:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
 
-      - name: 🔒 Check branch (main only)
+      - name: 🐞 Debug input
         run: |
-          echo "Branch actuelle : ${{ github.ref_name }}"
-          if [ "${{ github.ref_name }}" != "main" ]; then
-            echo "❌ Ce workflow réutilisable ne peut être exécuté que depuis la branche main"
+          echo "image_tag reçu : '${{ inputs.image_tag }}'"
+          if [ -z "${{ inputs.image_tag }}" ]; then
+            echo "❌ image_tag est vide"
             exit 1
           fi
 
       - name: 🐳 Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: 🔐 Log in to Container Registry
+      - name: 🔐 Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 🐞 Debug received inputs
+      - name: 🏷️ Generate Docker image tag
+        id: docker_tag
         run: |
-          echo "dockerfile = '${{ inputs.dockerfile }}'"
-          echo "context    = '${{ inputs.context }}'"
-          echo "image_tag  = '${{ inputs.image_tag }}'"
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.image_tag }}"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "✅ Image générée : ${IMAGE}"
 
-      - name: 📋 Generate Docker tag (manual)
-        id: tags
-        run: |
-          IMAGE_BASE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
-          TAG="${{ inputs.image_tag }}"
-
-          if [ -z "$TAG" ]; then
-            echo "❌ Le tag Docker est obligatoire"
-            exit 1
-          fi
-
-          FULL_TAG="${IMAGE_BASE}:${TAG}"
-
-          echo "tags=${FULL_TAG}" >> "$GITHUB_OUTPUT"
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-
-          echo "✅ Tag généré : ${FULL_TAG}"
-
-      - name: 📄 Copy .env.devops to .env
-        run: |
-          if [ -f .env.devops ]; then
-            cp .env.devops .env
-            echo "✅ .env.devops copié vers .env"
-          else
-            echo "ℹ️ Aucun fichier .env.devops trouvé, étape ignorée"
-          fi
-
-      - name: 🏗️ Build and push Docker image
+      - name: 🏗️ Build & Push Docker image
         uses: docker/build-push-action@v5
         with:
           context: ${{ inputs.context }}
           file: ${{ inputs.dockerfile }}
           push: true
-          tags: ${{ steps.tags.outputs.tags }}
+          tags: ${{ steps.docker_tag.outputs.image }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: 📝 Output image info
+      - name: 📝 Summary
         run: |
-          echo "🐳 Image construite et poussée avec succès :"
-          echo "  Registry:    ${{ env.REGISTRY }}"
-          echo "  Repository:  ${{ env.IMAGE_NAME }}"
-          echo "  Tag:         ${{ steps.tags.outputs.tag }}"
-          echo "  Image full:  ${{ steps.tags.outputs.tags }}"
+          echo "🐳 Image Docker poussée avec succès"
+          echo "Registry :  ${{ env.REGISTRY }}"
+          echo "Repo     :  ${{ env.IMAGE_NAME }}"
+          echo "Tag      :  ${{ inputs.image_tag }}"
+          echo "Full     :  ${{ steps.docker_tag.outputs.image }}"
