@@ -1,15 +1,13 @@
-name: 🐳 Docker Build & Push (Reusable – Manual Tag)
+name: 🐳 Docker Build & Push - Reusable
 
 on:
   workflow_call:
     inputs:
       dockerfile:
-        description: "Chemin vers le Dockerfile"
         required: false
         type: string
         default: ./Dockerfile
       context:
-        description: "Contexte Docker"
         required: false
         type: string
         default: .
@@ -37,7 +35,7 @@ jobs:
         run: |
           echo "image_tag reçu : '${{ inputs.image_tag }}'"
           if [ -z "${{ inputs.image_tag }}" ]; then
-            echo "❌ image_tag est vide"
+            echo "❌ Le tag Docker est obligatoire"
             exit 1
           fi
 
@@ -51,27 +49,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 🏷️ Generate Docker image tag
-        id: docker_tag
-        run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.image_tag }}"
-          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
-          echo "✅ Image générée : ${IMAGE}"
-
       - name: 🏗️ Build & Push Docker image
         uses: docker/build-push-action@v5
         with:
           context: ${{ inputs.context }}
           file: ${{ inputs.dockerfile }}
           push: true
-          tags: ${{ steps.docker_tag.outputs.image }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.image_tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: 📝 Summary
+      - name: 📝 Output image info
         run: |
-          echo "🐳 Image Docker poussée avec succès"
-          echo "Registry :  ${{ env.REGISTRY }}"
-          echo "Repo     :  ${{ env.IMAGE_NAME }}"
-          echo "Tag      :  ${{ inputs.image_tag }}"
-          echo "Full     :  ${{ steps.docker_tag.outputs.image }}"
+          echo "🐳 Image Docker poussée :"
+          echo "Registry : ${{ env.REGISTRY }}"
+          echo "Repository : ${{ env.IMAGE_NAME }}"
+          echo "Tag : ${{ inputs.image_tag }}"
+          echo "Full image : ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.image_tag }}"
