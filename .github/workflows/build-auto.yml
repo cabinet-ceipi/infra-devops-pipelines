@@ -1,4 +1,4 @@
-name: 🐳 Docker Build & Push - Main Branch (Reusable)
+name: 🐳 Docker Build & Push (Manual Tag)
 
 on:
   workflow_call:
@@ -7,10 +7,16 @@ on:
         required: false
         type: string
         default: ./Dockerfile
+
       context:
         required: false
         type: string
         default: .
+
+      image_tag:
+        description: "Tag Docker (obligatoire, ex: v1.0.0)"
+        required: true
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -19,63 +25,43 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+
     permissions:
       contents: read
       packages: write
 
     steps:
-      - name: 📥 Checkout code
+      - name: 📥 Checkout
         uses: actions/checkout@v4
 
-      - name: 🐳 Set up Docker Buildx
+      - name: 🐳 Setup Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: 🔐 Log in to Container Registry
+      - name: 🔐 Login GHCR
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 📋 Generate Docker tag
-        id: tags
+      - name: 📋 Validate tag
         run: |
-          BRANCH_NAME="${{ github.ref_name }}"
-          IMAGE_BASE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
-
-          if [[ "$BRANCH_NAME" == "main" ]]; then
-            TAGS="${IMAGE_BASE}:main"
-          else
-            echo "❌ Branche non autorisée : $BRANCH_NAME (seule la branche main est acceptée)"
+          if [[ -z "${{ inputs.image_tag }}" ]]; then
+            echo "❌ image_tag est obligatoire"
             exit 1
           fi
 
-          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
-          echo "branch_name=${BRANCH_NAME}" >> "$GITHUB_OUTPUT"
-
-      - name: 📄 Copy .env.devops to .env
-        run: |
-          if [ -f .env.devops ]; then
-            cp .env.devops .env
-            echo ".env.devops copied to .env"
-          else
-            echo "No .env.devops file found, skipping copy."
-          fi
-
-      - name: 🏗️ Build and push Docker image
+      - name: 🏗️ Build & Push
         uses: docker/build-push-action@v5
         with:
           context: ${{ inputs.context }}
           file: ${{ inputs.dockerfile }}
           push: true
-          tags: ${{ steps.tags.outputs.tags }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.image_tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: 📝 Output image info
+      - name: 📝 Output
         run: |
-          echo "🐳 Image construite et poussée :"
-          echo "  Registry:   ${{ env.REGISTRY }}"
-          echo "  Repository: ${{ env.IMAGE_NAME }}"
-          echo "  Tag:        ${{ steps.tags.outputs.tags }}"
-          echo "  Branch:     ${{ steps.tags.outputs.branch_name }}"
+          echo "Image : ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.image_tag }}"
