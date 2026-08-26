@@ -30,6 +30,9 @@ on:
 jobs:
   build_and_push:
     runs-on: ubuntu-latest
+    concurrency:
+      group: integration-prerelease-${{ github.repository }}-${{ github.ref }}
+      cancel-in-progress: true
     permissions:
       contents: read
       packages: write
