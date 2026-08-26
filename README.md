@@ -37,3 +37,37 @@ jobs:
       context: .
     # secrets:
     #   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+## Images de pré-release des branches d'intégration
+
+Le workflow réutilisable `.github/workflows/integration-prerelease.yml` construit et publie une image GHCR à partir d'une branche nommée `integration/<version-semver>`.
+
+Exemple d'appel après réussite de la CI :
+
+```yaml
+on:
+  push:
+    branches:
+      - "integration/**"
+
+jobs:
+  quality:
+    # Contrôles propres au dépôt appelant.
+
+  prerelease-image:
+    needs: quality
+    permissions:
+      contents: read
+      packages: write
+    uses: cabinet-ceipi/infra-devops-pipelines/.github/workflows/integration-prerelease.yml@<commit-ou-tag>
+    with:
+      dockerfile: ./Dockerfile.prod
+      context: .
+```
+
+Tags publiés :
+
+- `integration/v1.2.0` produit `1.2.0-integration` et `1.2.0-integration.sha-<sha-court>` ;
+- `integration/v1.2.1-pilot.1` produit `1.2.1-pilot.1` et `1.2.1-pilot.1.sha-<sha-court>`.
+
+Le premier tag suit le dernier build valide de la branche. Le second identifie un commit précis et doit être privilégié pour un déploiement reproductible. Ce workflow ne publie jamais le tag `latest`, réservé aux releases stables.
