@@ -50,6 +50,10 @@ on:
     branches:
       - "integration/**"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality:
     # Contrôles propres au dépôt appelant.
@@ -71,3 +75,5 @@ Tags publiés :
 - `integration/v1.2.1-pilot.1` produit `1.2.1-pilot.1` et `1.2.1-pilot.1.sha-<sha-court>`.
 
 Le premier tag suit le dernier build valide de la branche. Le second identifie un commit précis et doit être privilégié pour un déploiement reproductible. Ce workflow ne publie jamais le tag `latest`, réservé aux releases stables.
+
+Le workflow réutilisable sérialise également les publications par dépôt et par branche. La section `concurrency` du workflow appelant annule plus tôt les anciens contrôles devenus obsolètes et évite de consommer inutilement les runners.
