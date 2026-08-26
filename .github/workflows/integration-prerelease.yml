@@ -1,0 +1,126 @@
+name: Docker Build & Push - Integration Prerelease (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      dockerfile:
+        description: Dockerfile used to build the image
+        required: false
+        type: string
+        default: ./Dockerfile
+      context:
+        description: Docker build context
+        required: false
+        type: string
+        default: .
+    outputs:
+      image:
+        description: GHCR image name without a tag
+        value: ${{ jobs.build_and_push.outputs.image }}
+      mutable_tag:
+        description: Mutable prerelease tag for the integration branch
+        value: ${{ jobs.build_and_push.outputs.mutable_tag }}
+      immutable_tag:
+        description: Immutable prerelease tag for the exact commit
+        value: ${{ jobs.build_and_push.outputs.immutable_tag }}
+      digest:
+        description: Published image digest
+        value: ${{ jobs.build_and_push.outputs.digest }}
+
+jobs:
+  build_and_push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.metadata.outputs.image }}
+      mutable_tag: ${{ steps.metadata.outputs.mutable_tag }}
+      immutable_tag: ${{ steps.metadata.outputs.immutable_tag }}
+      digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Generate prerelease image metadata
+        id: metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_REF}" != refs/heads/integration/* ]]; then
+            echo "This workflow only accepts integration/* branches (received: ${GITHUB_REF})." >&2
+            exit 1
+          fi
+
+          VERSION="${GITHUB_REF#refs/heads/integration/}"
+          VERSION="${VERSION#v}"
+
+          if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
+            echo "The integration branch suffix must be a semantic version (received: ${VERSION})." >&2
+            exit 1
+          fi
+
+          if [[ "${VERSION}" == *-* ]]; then
+            PRERELEASE_VERSION="${VERSION}"
+          else
+            PRERELEASE_VERSION="${VERSION}-integration"
+          fi
+
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          SHORT_SHA="${GITHUB_SHA:0:12}"
+          MUTABLE_TAG="${IMAGE}:${PRERELEASE_VERSION}"
+          IMMUTABLE_TAG="${IMAGE}:${PRERELEASE_VERSION}.sha-${SHORT_SHA}"
+          BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+
+          {
+            echo "image=${IMAGE}"
+            echo "version=${PRERELEASE_VERSION}"
+            echo "mutable_tag=${MUTABLE_TAG}"
+            echo "immutable_tag=${IMMUTABLE_TAG}"
+            echo "build_date=${BUILD_DATE}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push prerelease image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          push: true
+          tags: |
+            ${{ steps.metadata.outputs.mutable_tag }}
+            ${{ steps.metadata.outputs.immutable_tag }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.metadata.outputs.version }}
+            org.opencontainers.image.created=${{ steps.metadata.outputs.build_date }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            APP_VERSION=${{ steps.metadata.outputs.version }}
+            COMMIT_SHA=${{ github.sha }}
+            BUILD_DATE=${{ steps.metadata.outputs.build_date }}
+
+      - name: Publish build summary
+        shell: bash
+        run: |
+          {
+            echo "## Integration prerelease image"
+            echo
+            echo "- Mutable tag: \`${{ steps.metadata.outputs.mutable_tag }}\`"
+            echo "- Immutable tag: \`${{ steps.metadata.outputs.immutable_tag }}\`"
+            echo "- Digest: \`${{ steps.build.outputs.digest }}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
